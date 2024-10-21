@@ -1,6 +1,6 @@
 ## Semi-Supervised Domain Adaptation for Wafer Map Defect
 
-Since our paper has not yet been published, we are only sharing a portion of the code related to this work. The complete code requires further refinement and will be made publicly available in the future. Stay tuned.
+ The complete code requires further refinement and will be made publicly available in the future. Stay tuned.
 
 ### 1. Requirements
 Before running the code, you need to install the required environment dependencies. Our code primarily relies on torch 2.0.1.
@@ -30,5 +30,5 @@ In this case, '-d' represents the data, '-a' specifies the backbone model to be 
 After the execution, the model will print the results for ACC (Accuracy), F1, Precision, and Recall.
 ### Acknowledgment
 
-The code is partly based on [*TLlib*](https://github.com/thuml/Transfer-Learning-Library)
+The code is based on [*TLlib*](https://github.com/thuml/Transfer-Learning-Library)
 
