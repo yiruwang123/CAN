@@ -1,6 +1,5 @@
 ## Semi-Supervised Domain Adaptation for Wafer Map Defect
 
- The complete code requires further refinement and will be made publicly available in the future. Stay tuned.
 
 ### 1. Requirements
 Before running the code, you need to install the required environment dependencies. Our code primarily relies on torch 2.0.1.

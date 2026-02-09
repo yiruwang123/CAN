@@ -30,7 +30,7 @@ from self_training.kl_div import KLDivergence
 import utils_ as utils
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# python train.py -d wm2 -a resnet34 --epochs 20 -i 500
+# python train.py -d wm -a resnet34 --epochs 20 -i 500
 
 def main(args: argparse.Namespace):
     logger = CompleteLogger(args.log, args.phase)
@@ -49,21 +49,19 @@ def main(args: argparse.Namespace):
     cudnn.benchmark = True
 
     # Data loading code
-    weak_augment = utils.get_train_transform2(args.train_resizing, random_horizontal_flip=True,
-                                             norm_mean=args.norm_mean, norm_std=args.norm_std)
+    weak_augment = utils.get_train_transform2(args.train_resizing, random_horizontal_flip=True)
     strong_augment = utils.get_train_transform2(args.train_resizing, random_horizontal_flip=True,
-                                               auto_augment=args.auto_augment,
-                                               norm_mean=args.norm_mean, norm_std=args.norm_std)
+                                               auto_augment=args.auto_augment)
     labeled_train_transform = MultipleApply([weak_augment, strong_augment])
     unlabeled_train_transform = MultipleApply([weak_augment, strong_augment])
-    val_transform = utils.get_val_transform2(args.val_resizing, norm_mean=args.norm_mean, norm_std=args.norm_std)
+    val_transform = utils.get_val_transform2(args.val_resizing)
     print('labeled_train_transform: ', labeled_train_transform)
     print('unlabeled_train_transform: ', unlabeled_train_transform)
     print('val_transform:', val_transform)
     source_dataset, target_dataset, target_dataset_val, target_dataset_unl, target_dataset_test, source_save, target_save = \
         utils.get_dataset(args.data,
                           args.num_samples_per_class,
-                          args.root, labeled_train_transform,
+                          labeled_train_transform,
                           val_transform,
                           unlabeled_train_transform=unlabeled_train_transform,
                           seed=args.seed)
@@ -127,19 +125,19 @@ def main(args: argparse.Namespace):
     feature_distance = {'e_distence_back':[],'e_distence_bottl':[],'acc':[]}
 
     for epoch in range(args.epochs):
-        # print lr
-        print(lr_scheduler.get_last_lr())
+        # print(lr_scheduler.get_last_lr())
 
         # train for one epoch
-        dynamic_threshold = train(thresholding_module, source_train_iter,labeled_train_iter, unlabeled_train_iter, classifier, optimizer, lr_scheduler, epoch, args)
+        dynamic_threshold, loss = train(thresholding_module, source_train_iter,labeled_train_iter, unlabeled_train_iter, classifier, optimizer, lr_scheduler, epoch, args)
         print(dynamic_threshold)
+
         # evaluate on validation set
         acc1, avg, D, _= utils.validate(val_loader, classifier, args, device, num_classes)
         acct, avgt, Dt, pseudo= utils.validate(test_loader, classifier, args, device, num_classes, threshold = dynamic_threshold.cpu() #args.threshold 
                     )
 
-        ft, e_distence = utils.save_feat(source_save_loader, target_save_loader, classifier, args, device, num_classes)
-        e_distence['acc'] = acct
+        # ft, e_distence = utils.save_feat(source_save_loader, target_save_loader, classifier, args, device, num_classes)
+        # e_distence['acc'] = acct
 
         # remember best acc@1 and save checkpoint
         # torch.save(classifier.state_dict(), logger.get_checkpoint_path('latest'))
@@ -153,13 +151,14 @@ def main(args: argparse.Namespace):
         best_avg = max(avg, best_avg)
         # for p in pseudo_d.keys():
         #     pseudo_d[p].append(pseudo[p])
-        for p in feature_distance.keys():
-            feature_distance[p].append(e_distence[p])
-        # np.save('/home/user/disk/yiru/feature_visual/dst/dst-static2.npy',static)
+        # for p in feature_distance.keys():
+        #     feature_distance[p].append(e_distence[p])
 
-    
+        # np.save('/home/user/disk/yiru/feature_visual/dst/dst-static2.npy',static)
+    # np.save('/home/user/disk/yiru/feature_visual/dst/losses-cca.npy',np.array(losses))
+    # np.save('/home/user/disk/yiru/feature_visual/dst/dst-nosample-distance-'+str(round(best_acc_test,2))+'.npy',feature_distance)
     print("best_acc_val = {:3.1f}".format(best_acc1))
-   
+ 
     print('best acc test %f' % (best_acc_test))
     print('best acc per: ', *best_dict['acc_per'])
     print('best f1: ', best_dict['f1'])
@@ -177,7 +176,7 @@ def train(thresholding_module, source_train_iter: ForeverDataIterator,labeled_tr
     data_time = AverageMeter('Data', ':2.1f')
     cls_losses = AverageMeter('Cls Loss', ':3.2f')
     self_training_losses = AverageMeter('Self Training Loss', ':3.2f')
-    crossalinloss = AverageMeter('crossalinloss Loss', ':3.2f')
+    supconlosses = AverageMeter('supconloss Loss', ':3.2f')
     losses = AverageMeter('Loss', ':3.2f')
     cls_accs = AverageMeter('Cls Acc', ':3.1f')
     pseudo_label_ratios = AverageMeter('Pseudo Label Ratio', ':3.1f')
@@ -185,7 +184,7 @@ def train(thresholding_module, source_train_iter: ForeverDataIterator,labeled_tr
 
     progress = ProgressMeter(
         args.iters_per_epoch,
-        [batch_time, data_time, losses, cls_losses, self_training_losses, crossalinloss, cls_accs, pseudo_label_accs,
+        [batch_time, data_time, losses, cls_losses, self_training_losses, supconlosses, cls_accs, pseudo_label_accs,
          pseudo_label_ratios],
         prefix="Epoch: [{}]".format(epoch))
 
@@ -219,12 +218,13 @@ def train(thresholding_module, source_train_iter: ForeverDataIterator,labeled_tr
 
         # clear grad
         optimizer.zero_grad()
-
+        start = time.time()
         # compute output
-
         x = torch.cat((x_l, x_u), dim=0)
+        
         outputs, midfeat, _, _ = model(x)
         y_l, y_u = outputs[:len(x_l)],outputs[len(x_l):]
+        # y_l_feat, y_u_feat = midfeat[:len(x_l)],midfeat[len(x_l):]
         _, y_s_feat, _, y_s = model(x_s)     #源域
 
         # ==============================================================================================================
@@ -246,38 +246,53 @@ def train(thresholding_module, source_train_iter: ForeverDataIterator,labeled_tr
         # self training loss
         # ==============================================================================================================
         _, feat_u, y_u_strong, _ = model(x_u_strong)
+        # self_training_loss, mask, pseudo_labels = self_training_criterion(y_u_strong, y_u)
+        # self_training_loss = args.trade_off_self_training * self_training_loss
 
+        #self_training
         confidence, pseudo_labels = F.softmax(y_u.detach(), dim=1).max(dim=1)
-        warmup = (epoch<=0)   #-1,0,1,3,7,11,15,19
+        warmup = (epoch<=5)   #-1,0,1,3,7,11,15,19
         status = thresholding_module.get_threshold(confidence, pseudo_labels, warmup)
         dynamic_threshold = status['threshold']
         mask = (confidence > dynamic_threshold[pseudo_labels]).float()
         # mask used for updating learning status
-        self_training_loss = args.trade_off_self_training * (
-                F.cross_entropy(y_u_strong, pseudo_labels, reduction='none') * mask).mean()
+        self_training_loss = (F.cross_entropy(y_u_strong, pseudo_labels, reduction='none') * mask).mean()
         # self_training_loss.backward()
-        
-        #-----------
+
+        #-----------sca
         _, feat_s_c, _, y_s2 = model(x_s_strong, True)   #源域cross
         _, feat_u_c, y_u2, _ = model(x_u_strong, True)    #目标域cross
+        # x_ls_strong = torch.cat((x_l_strong, x_s_strong), dim=0)
         sampleloss_hard = (F.cross_entropy(y_u2, pseudo_labels, reduction='none') * mask).mean() + F.cross_entropy(y_s2, labels_s)
         sampleloss_soft = kl_criterion(y_s2, y_s_strong) + kl_criterion(y_u2, y_u_strong)
-        crossalinloss = (sampleloss_hard + sampleloss_soft) *0.5
-        # supconloss.backward()
-        # crossalinloss = (loss_t + loss_s) * 0.5 + crossalinloss  
+        supconloss = (sampleloss_hard + sampleloss_soft) *1.5
 
-        warmup = (epoch<=0)   
+        #cca
+        feat_s_c, _ = feat_s_c
+        feat_s, _ = feat_s
+        _, feat_u_c = feat_u_c
+        _, feat_u = feat_u
+        suorce, suorce_y = torch.cat((feat_s_c,feat_s),0), torch.cat((labels_s,labels_s),0)
+        target, target_y = torch.cat((feat_u_c,feat_u),0), torch.cat((pseudo_labels,pseudo_labels),0)
+        loss_s = supcon_criterion(suorce.view([suorce.shape[0],1,-1]), suorce_y).mean() 
+        loss_t = supcon_criterion(target.view([target.shape[0],1,-1]), target_y).mean() 
+        supconloss = (loss_t + loss_s) * 0.5 + supconloss  
+
         if warmup:
             (cls_loss_strong + self_training_loss).backward()
         else:
-            (cls_loss_strong +crossalinloss+ self_training_loss).backward()
+            (cls_loss_strong +supconloss+ self_training_loss).backward()
+        # (cls_loss_strong +supconloss+ self_training_loss).backward()
 
+        # print(time.time()-start)
         # measure accuracy and record loss
         cls_loss = cls_loss_strong + cls_loss_weak
         cls_losses.update(cls_loss.item(), batch_size)
-        loss = cls_loss + self_training_loss + crossalinloss 
+        loss = cls_loss + self_training_loss + supconloss 
+        
         losses.update(loss.item())
-        crossalinloss.update(crossalinloss.item())
+        #wce_losses.update(wce_loss.item(), batch_size)
+        supconlosses.update(supconloss.item())
         self_training_losses.update(self_training_loss.item())
 
         cls_acc = accuracy(y_l, labels_l)[0]
@@ -287,6 +302,7 @@ def train(thresholding_module, source_train_iter: ForeverDataIterator,labeled_tr
         n_pseudo_labels = mask.sum()
         ratio = n_pseudo_labels / batch_size
         pseudo_label_ratios.update(ratio.item() * 100, batch_size)
+        # pseudo_d['pseudo_ratio'].append(ratio.item() * 100)
 
         # accuracy of pseudo labels
         if n_pseudo_labels > 0:
@@ -306,14 +322,12 @@ def train(thresholding_module, source_train_iter: ForeverDataIterator,labeled_tr
 
         if i % args.print_freq == 0:
             progress.display(i)
-    return dynamic_threshold
+    return dynamic_threshold, loss.item()
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Debiased Self-Training for Semi Supervised Learning')
     # dataset parameters
-    parser.add_argument('root', metavar='DIR',
-                        help='root path of dataset')
     parser.add_argument('-d', '--data', metavar='DATA',
                         help='dataset: ' + ' | '.join(utils.get_dataset_names()))
     parser.add_argument('--num-samples-per-class', default=3, type=int,

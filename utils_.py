@@ -16,7 +16,7 @@ import torchvision.transforms as T
 import timm
 from timm.data.auto_augment import auto_augment_transform, rand_augment_transform
 
-sys.path.append('../../..')
+# sys.path.append('../../..')
 from classifier import Classifier
 import vision.datasets as datasets
 import vision.models as models
@@ -58,9 +58,8 @@ def get_dataset_names():
         if not name.startswith("__") and callable(datasets.__dict__[name])
     )
 
-
-def get_dataset(dataset_name, num_samples_per_class, root, labeled_train_transform, val_transform,
-                unlabeled_train_transform=None, seed=0):
+def get_dataset(dataset_name, num_samples_per_class,  labeled_train_transform, val_transform,
+                unlabeled_train_transform=None, root = './', seed=0):
     if unlabeled_train_transform is None:
         unlabeled_train_transform = labeled_train_transform
 
@@ -68,14 +67,15 @@ def get_dataset(dataset_name, num_samples_per_class, root, labeled_train_transfo
     if dataset_name == "wm":   #SSDA
         
         df=np.load('wm811k-64.npz')
-        # df=np.load('/home/user/disk/yiru/mixed2m38-64-single.npz')
+        # df=np.load('/home/user/disk/yiru/wm811k-64.npz')
+        
         source = df['data']
         source_label = df['label']
         class_names = ['Center', 'Donut', 'Edge-Loc', 'Edge-Ring', 'Loc', 'Random', 'Scratch', 'Near-full', 'none']
         num_classes = len(class_names)
-
-        # df=np.load('/home/user/disk/yiru/wm811k-64.npz')
+        
         df=np.load('mixed2m38-64-single.npz')
+        # df=np.load('/home/user/disk/yiru/mixed2m38-64-single.npz')
         target = df['data']
         target_label = df['label']
 
@@ -156,7 +156,7 @@ def x_u_split(num_samples_per_class, num_classes, labels, seed):
     return labeled_idxes, unlabeled_idxes
 
 
-
+ 
 def get_train_transform2(resizing='default', random_horizontal_flip=True, auto_augment=None
                         ):
     transforms = []
