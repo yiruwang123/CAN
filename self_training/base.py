@@ -91,10 +91,8 @@ class ImageClassifier(Classifier):
             f_t = self.bottleneck(f)
         else:
             f_s = self.bottleneck(f)
-            # f_t = self.bottleneck2(f)
-            f_t = self.bottleneck(f)
-        # f_adv = self.grl_layer(f)
-        # outputs_adv = self.adv_head(f_adv)
+            f_t = self.bottleneck2(f)
+
         outputs = self.head(f_t)
         outputs_pseudo = self.pseudo_head(f_t)
         outputs_source = self.source_head(f_s)
@@ -218,24 +216,7 @@ class DynamicThresholdingModule(object):
         self.threshold = status
         return {'threshold':status,'ratio':ratio,'static':self.static,'middle':middle,'confidence':confidence,'mask':mask}
 
-        # """Calculate and return dynamic threshold"""
-        # pseudo_counter = Counter(self.net_outputs.tolist())
-        # if max(pseudo_counter.values()) == self.n_unlabeled_samples:
-        #     # In the early stage of training, the network does not output pseudo labels with high confidence.
-        #     # In this case, the learning status of all categories is simply zero.
-        #     status = torch.zeros(self.num_classes).to(self.device)
-        # else:
-        #     if not self.warmup and -1 in pseudo_counter.keys():
-        #         pseudo_counter.pop(-1)
-        #     max_num = max(pseudo_counter.values())
-        #     # estimate learning status
-        #     status = [
-        #         pseudo_counter[c] / max_num for c in range(self.num_classes)
-        #     ]
-        #     status = torch.FloatTensor(status).to(self.device)
-        # # calculate dynamic threshold
-        # dynamic_threshold = self.threshold * self.mapping_func(status[pseudo_labels])
-        # return dynamic_threshold
+    
 
     def update(self, idxes, selected_mask, pseudo_labels):
         """Update the learning status

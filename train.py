@@ -265,7 +265,7 @@ def train(thresholding_module, source_train_iter: ForeverDataIterator,labeled_tr
         # x_ls_strong = torch.cat((x_l_strong, x_s_strong), dim=0)
         sampleloss_hard = (F.cross_entropy(y_u2, pseudo_labels, reduction='none') * mask).mean() + F.cross_entropy(y_s2, labels_s)
         sampleloss_soft = kl_criterion(y_s2, y_s_strong) + kl_criterion(y_u2, y_u_strong)
-        supconloss = (sampleloss_hard + sampleloss_soft) *1.5
+        supconloss = (sampleloss_hard + sampleloss_soft) *0.5
 
         #cca
         feat_s_c, _ = feat_s_c
@@ -282,9 +282,9 @@ def train(thresholding_module, source_train_iter: ForeverDataIterator,labeled_tr
             (cls_loss_strong + self_training_loss).backward()
         else:
             (cls_loss_strong +supconloss+ self_training_loss).backward()
-        # (cls_loss_strong +supconloss+ self_training_loss).backward()
+        
 
-        # print(time.time()-start)
+        # print(time.time()-start)s
         # measure accuracy and record loss
         cls_loss = cls_loss_strong + cls_loss_weak
         cls_losses.update(cls_loss.item(), batch_size)
